@@ -12,11 +12,11 @@ use rand::RngCore;
 use serde_json::Value;
 use sha2::Digest;
 #[cfg(feature = "mock_salts")]
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::VecDeque, sync::Mutex};
 
 #[cfg(feature = "mock_salts")]
 lazy_static! {
-    pub static ref SALTS: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
+    pub static ref SALTS: Mutex<VecDeque<String>> = Mutex::new(VecDeque::with_capacity(100));
 }
 
 pub(crate) fn base64_hash(data: &[u8]) -> String {
@@ -38,19 +38,24 @@ pub(crate) fn base64url_decode(b64data: &str) -> Result<Vec<u8>> {
 }
 
 pub(crate) fn generate_salt(_key_for_predefined_salt: Option<String>) -> String {
-
-    #[cfg(feature = "mock_salts")]
-    {
-        let map = SALTS.lock().unwrap();
-        if let Some(salt) = _key_for_predefined_salt.and_then(|key| map.get(&key)) {
-            //FIXME better mock approach
-            return salt.clone()
-        }
-    }
-
     let mut buf = [0u8; 16];
     ThreadRng::default().fill_bytes(&mut buf);
     base64url_encode(&buf)
+}
+
+pub(crate) fn generate_salt_mock(_key_for_predefined_salt: Option<String>) -> String {
+
+    #[cfg(feature = "mock_salts")]
+    {
+        let mut salts = SALTS.lock().unwrap();
+
+        if let Some(salt) = salts.pop_front() {
+            //FIXME better mock approach
+            return salt.clone()
+        }
+
+        panic!("salts is empty");
+    }
 }
 
 pub(crate) fn jwt_payload_decode(b64data: &str) -> Result<serde_json::Map<String, Value>> {

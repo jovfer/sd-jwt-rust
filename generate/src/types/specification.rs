@@ -10,7 +10,7 @@ const SD_TAG: &str = "!sd";
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 pub struct Specification {
     pub user_claims: UserClaims,
-    pub holder_disclosed_claims: HashMap<Value, Value>,
+    pub holder_disclosed_claims: HashMap<String, Value>,
     pub add_decoy_claims: Option<bool>,
     pub key_binding: Option<bool>,
 }
@@ -32,13 +32,11 @@ impl From<&PathBuf> for Specification {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
-pub struct UserClaims(HashMap<Value, Value>);
+pub struct UserClaims(Value);
 
 impl UserClaims {
     pub fn claims_to_json_value(&self) -> Result<serde_json::Value> {
-        let value = serde_yaml::to_value(&self.0)
-            .expect("Failed to convert user-claims into serde_yaml::Value");
-        let filtered_value = _remove_tags(&value);
+        let filtered_value = _remove_tags(&self.0);
         let json_value: serde_json::Value =
             serde_yaml::from_value(filtered_value).expect("Failed to convert serde_json::Value");
 
@@ -48,9 +46,9 @@ impl UserClaims {
     pub fn sd_claims_to_jsonpath(&self) -> Result<Vec<String>> {
         let mut path = "".to_string();
         let mut paths = Vec::new();
-        let mut claims = serde_yaml::to_value(&self.0)?;
+        let mut claims = self.0.clone();
 
-        let _ = generate_jsonpath_from_tagged_values(&mut claims, &mut path, &mut paths);
+        let _ = generate_jsonpath_from_tagged_values(&mut claims, path, &mut paths);
 
         Ok(paths)
     }
