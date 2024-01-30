@@ -82,8 +82,6 @@ fn generate_and_check(
     let strategy =
         ClaimsForSelectiveDisclosureStrategy::Custom(sd_claims_jsonpaths.iter().map(String::as_str).collect());
 
-    dbg!(&strategy);
-
     let jwk: Option<Jwk> = if specs.key_binding.unwrap_or(false) {
         let jwk: Jwk = serde_yaml::from_value(settings.key_settings.holder_key.clone()).unwrap();
         Some(jwk)
@@ -253,17 +251,12 @@ fn load_salts(path: &PathBuf) -> Result<()> {
             .map_err(|e| Error::from_msg(ErrorKind::IOError, e.to_string()))?;
         let salts: Vec<String> = serde_json::from_str(&json_data)?;
 
-
-        dbg!(&salts);
-
         {
-            let mut map = SALTS.lock().unwrap();
+            let mut s = SALTS.lock().unwrap();
 
             for salt in salts.iter() {
-                map.push_back(salt.clone());
+                s.push_back(salt.clone());
             }
-
-            dbg!(&map);
         }
     }
 

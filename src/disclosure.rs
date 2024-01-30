@@ -45,10 +45,10 @@ impl SDJWTDisclosure  {
     }
 }
 
-fn escape_unicode_chars(sss: &str) -> String {
+fn escape_unicode_chars(s: &str) -> String {
     let mut result = String::new();
 
-    for c in sss.chars() {
+    for c in s.chars() {
         if c.is_ascii() {
             result.push(c);
         } else {

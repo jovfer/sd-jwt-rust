@@ -16,7 +16,7 @@ use std::{collections::VecDeque, sync::Mutex};
 
 #[cfg(feature = "mock_salts")]
 lazy_static! {
-    pub static ref SALTS: Mutex<VecDeque<String>> = Mutex::new(VecDeque::with_capacity(100));
+    pub static ref SALTS: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 }
 
 pub(crate) fn base64_hash(data: &[u8]) -> String {
@@ -43,19 +43,10 @@ pub(crate) fn generate_salt(_key_for_predefined_salt: Option<String>) -> String 
     base64url_encode(&buf)
 }
 
+#[cfg(feature = "mock_salts")]
 pub(crate) fn generate_salt_mock(_key_for_predefined_salt: Option<String>) -> String {
-
-    #[cfg(feature = "mock_salts")]
-    {
-        let mut salts = SALTS.lock().unwrap();
-
-        if let Some(salt) = salts.pop_front() {
-            //FIXME better mock approach
-            return salt.clone()
-        }
-
-        panic!("salts is empty");
-    }
+    let mut salts = SALTS.lock().unwrap();
+    return salts.pop_front().expect("SALTS is empty");
 }
 
 pub(crate) fn jwt_payload_decode(b64data: &str) -> Result<serde_json::Map<String, Value>> {
