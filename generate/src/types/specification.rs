@@ -1,7 +1,6 @@
 use crate::utils::generate::generate_jsonpath_from_tagged_values;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use crate::error::Result;
 
@@ -10,14 +9,61 @@ const SD_TAG: &str = "!sd";
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 pub struct Specification {
     pub user_claims: UserClaims,
-    pub holder_disclosed_claims: HashMap<String, Value>,
+    pub holder_disclosed_claims: serde_json::Map<String, serde_json::Value>,
     pub add_decoy_claims: Option<bool>,
     pub key_binding: Option<bool>,
+    pub serialization_format: Option<String>,
+}
+
+impl Specification {
+    fn update_disclosed_claims(&mut self) {
+        // not to transform top-level empty object
+        if self.holder_disclosed_claims.is_empty() {
+            return;
+        }
+
+        let res = replace_empty_items(&serde_json::Value::Object(self.holder_disclosed_claims.clone()));
+        self.holder_disclosed_claims = res.as_object().unwrap().clone();
+    }
+}
+
+fn replace_empty_items(m: &serde_json::Value) -> serde_json::Value {
+    match m {
+        serde_json::Value::Array(arr) if (arr.is_empty()) => {
+            return serde_json::Value::Bool(false);
+        }
+        serde_json::Value::Object(obj) if (obj.is_empty()) => {
+            return serde_json::Value::Bool(false);
+        }
+        serde_json::Value::Array(arr) => {
+            let mut result = Vec::new();
+
+            for value in arr {
+                result.push(replace_empty_items(value));
+            }
+
+            return serde_json::Value::Array(result);
+        }
+        serde_json::Value::Object(obj) => {
+            let mut result = serde_json::Map::new();
+
+            for (key, value) in obj {
+                result.insert(key.clone(), replace_empty_items(value));
+            }
+
+            return serde_json::Value::Object(result);
+        }
+        _ => {
+            return m.clone();
+        }
+    }
 }
 
 impl From<&str> for Specification {
     fn from(value: &str) -> Self {
-        serde_yaml::from_str(value).unwrap_or(Specification::default())
+        let mut result = serde_yaml::from_str(value).unwrap_or(Specification::default());
+        result.update_disclosed_claims();
+        result
     }
 }
 
@@ -25,7 +71,9 @@ impl From<&PathBuf> for Specification {
     fn from(path: &PathBuf) -> Self {
         let contents = std::fs::read_to_string(path).expect("Failed to read specification file");
 
-        let spec: Specification = serde_yaml::from_str(&contents).expect("Failed to parse YAML");
+        let mut spec: Specification = serde_yaml::from_str(&contents).expect("Failed to parse YAML");
+
+        spec.update_disclosed_claims();
 
         spec
     }
@@ -44,7 +92,7 @@ impl UserClaims {
     }
 
     pub fn sd_claims_to_jsonpath(&self) -> Result<Vec<String>> {
-        let mut path = "".to_string();
+        let path = "".to_string();
         let mut paths = Vec::new();
         let mut claims = self.0.clone();
 

@@ -11,25 +11,24 @@ use sd_jwt_rs::issuer::{ClaimsForSelectiveDisclosureStrategy, SDJWTIssuer};
 use sd_jwt_rs::holder::SDJWTHolder;
 use sd_jwt_rs::verifier::SDJWTVerifier;
 use sd_jwt_rs::SDJWTSerializationFormat;
+use sd_jwt_rs::utils::{base64_hash, base64url_decode};
 #[cfg(feature = "mock_salts")]
 use sd_jwt_rs::utils::SALTS;
 use serde_json::{Number, Value};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use types::cli::{Cli, GenerateType};
 use types::settings::Settings;
 use types::specification::Specification;
-use serde_json::json;
 
 const ISSUER_KEY_PEM_FILE_NAME: &str = "issuer_key.pem";
 const ISSUER_PUBLIC_KEY_PEM_FILE_NAME: &str = "issuer_public_key.pem";
 // const HOLDER_KEY_PEM_FILE_NAME: &str = "holder_key.pem";
-// const SERIALIZATION_FORMAT: &str = "compact";
-const SERIALIZATION_FORMAT: SDJWTSerializationFormat = SDJWTSerializationFormat::JSON;
 const SETTINGS_FILE_NAME: &str = "settings.yml";
 const SPECIFICATION_FILE_NAME: &str = "specification.yml";
 const SALTS_FILE_NAME: &str = "claims_vs_salts.json";
-const SD_JWT_PAYLOAD_FILE_NAME: &str = "sd_jwt_payload.json";
+const SD_JWT_FILE_NAME_TEMPLATE: &str = "sd_jwt_issuance";
+const VERIFIED_CLAIMS_FILE_NAME: &str = "verified_contents.json";
 
 fn main() {
     let args = Cli::parse();
@@ -60,11 +59,60 @@ fn generate_and_check(
     specs: Specification,
     _: GenerateType,
 ) -> Result<()> {
-    // let seed = settings.random_seed.unwrap_or(0);
+    let decoy = specs.add_decoy_claims.unwrap_or(false);
 
-    // Get keys from .pem files
+    let serialization_format = match specs.serialization_format.clone() {
+        Some(format) if format == "json" => SDJWTSerializationFormat::JSON,
+        Some(format) if format == "compact" => SDJWTSerializationFormat::Compact,
+        None => {
+            println!("using default serialization format: Compact");
+            SDJWTSerializationFormat::Compact
+        },
+        Some(format) => {
+            panic!("unsupported format: {format}");
+        },
+    };
+
+    let sd_jwt = issue_sd_jwt(directory, &specs, settings, serialization_format.clone(), decoy)?;
+    let presentation = create_presentation(&sd_jwt, serialization_format.clone(), &specs.holder_disclosed_claims);
+
+    // Verify presentation
+    let verified_claims = verify_presentation(directory, &presentation, serialization_format.clone());
+
+    let mut json_format = false;
+    let mut extension = "txt";
+
+    if specs.serialization_format.is_some() {
+        match specs.serialization_format {
+            Some(format) if format == "json" => {
+                json_format = true;
+                extension = "json";
+            }
+            _ => {}
+        }
+    }
+
+    let loaded_sd_jwt = load_sd_jwt(&directory.join(format!("{SD_JWT_FILE_NAME_TEMPLATE}.{extension}")))?;
+
+    let loaded_sdjwt_paylod = parse_sdjwt_paylod(&loaded_sd_jwt.replace("\n", ""), json_format, decoy);
+    let issued_sdjwt_paylod = parse_sdjwt_paylod(&sd_jwt, json_format, decoy);
+
+    compare_jwt_payloads(&loaded_sdjwt_paylod, &issued_sdjwt_paylod)?;
+
+    let loaded_verified_claims_content = load_sd_jwt(&directory.join(VERIFIED_CLAIMS_FILE_NAME))?;
+    let loaded_verified_claims = parse_verified_claims(&loaded_verified_claims_content)?;
+
+    compare_verified_claims(&loaded_verified_claims, &verified_claims)
+}
+
+fn issue_sd_jwt(
+    directory: &PathBuf,
+    specs: &Specification,
+    settings: &Settings,
+    serialization_format: SDJWTSerializationFormat,
+    decoy: bool
+) -> Result<String> {
     let issuer_key = get_key(&directory.join(ISSUER_KEY_PEM_FILE_NAME));
-    // let holder_key = get_key(key_path.join(HOLDER_KEY_PEM_FILE_NAME));
 
     let mut user_claims = specs.user_claims.claims_to_json_value()?;
     let claims_obj = user_claims.as_object_mut().expect("must be an object");
@@ -76,7 +124,6 @@ fn generate_and_check(
     claims_obj.insert(String::from("iat"), Value::Number(Number::from(iat)));
     claims_obj.insert(String::from("exp"), Value::Number(Number::from(exp)));
 
-    let decoy = specs.add_decoy_claims.unwrap_or(false);
     let sd_claims_jsonpaths = specs.user_claims.sd_claims_to_jsonpath()?;
 
     let strategy =
@@ -95,99 +142,175 @@ fn generate_and_check(
             strategy,
             jwk,
             decoy,
-            SERIALIZATION_FORMAT);
+            serialization_format)
+        .unwrap();
 
-    // let issuer = SDJWTIssuer::issue_sd_jwt(
-    //     user_claims,
-    //     strategy,
-    //     issuer_key,
-    //     None,
-    //     None,
-    //     decoy,
-    //     SERIALIZATION_FORMAT.to_string(),
-    // );
-    // println!("Issued SD-JWT \n {:#?}", sd_jwt.unwrap());
-
-    // return compare_jwt_payloads(
-    //     &directory.join(SD_JWT_PAYLOAD_FILE_NAME),
-    //     &issuer.sd_jwt_payload,
-    // );
-    
-
-    // let mut holder = SDJWTHolder::new(
-    //     // issuer.serialized_sd_jwt.clone(),
-    //     sd_jwt.unwrap().clone(),
-    //     SERIALIZATION_FORMAT,
-    // ).unwrap();
-    // // holder.create_presentation(Some(vec!["address".to_string()]), None, None, None, None);
-
-    // let mut hdc = serde_json::Map::new();
-    // let vvvv = json!([true, true, true, true, true, true, true]);
-    // hdc.insert(String::from("data_types"), vvvv);
-    // dbg!(&hdc);
-
-    // let presentation = holder
-    //     .create_presentation(
-    //         // specs.holder_disclosed_claims,
-    //         hdc,
-    //         None,
-    //         None,
-    //         None,
-    //         None
-    //         // Some(String::from("1234567890")), // TODO: read it from settings.yml
-    //         // aud.clone(),
-    //         // holder_key,
-    //         // sign_algo,
-    //     ).unwrap();
-    // dbg!(&presentation);
-
-    // let bbb: serde_json::Value = serde_json::from_str(&presentation).expect("bbb");
-    // dbg!(&bbb);
-    
-
-    // // Verify presentation
-    // // let pub_key_path = directory.clone().join(ISSUER_PUBLIC_KEY_PEM_FILE_NAME);
-
-    // let _verified = SDJWTVerifier::new(
-    //     presentation.clone(),
-    //     Box::new(|_, _| {
-    //         let key = std::fs::read("../../sd-jwt-python/tests/testcases/array_data_types/issuer_public_key.pem").expect("Failed to read file");
-    //         DecodingKey::from_ec_pem(&key).expect("Unable to create EncodingKey")
-    //     }),
-    //     None,
-    //     None,
-    //     SERIALIZATION_FORMAT,
-    // ).unwrap();
-
-    // dbg!(_verified.verified_claims);
-
-
-    // // println!("Created presentation \n {:?}", holder.sd_jwt_presentation)
-
-
-
-    compare_jwt_payloads(
-        &directory.join(SD_JWT_PAYLOAD_FILE_NAME),
-        &issuer.sd_jwt_payload,
-    )
+    return Ok(sd_jwt);
 }
 
-fn compare_jwt_payloads(path: &PathBuf, compare: &serde_json::Map<String, Value>) -> Result<()> {
-    let contents = std::fs::read_to_string(path)?;
+fn create_presentation(
+    sd_jwt: &str,
+    serialization_format: SDJWTSerializationFormat,
+    disclosed_claims: &serde_json::Map<String, serde_json::Value>
+) -> String {
+    let mut holder = SDJWTHolder::new(sd_jwt.to_string(), serialization_format).unwrap();
 
-    let json_value: serde_json::Map<String, Value> = serde_json::from_str(&contents)
-        .expect(&format!("Failed to parse to serde_json::Value {:?}", path));
+    let presentation = holder
+        .create_presentation(
+            disclosed_claims.clone(),
+            None,
+            None,
+            None,
+            None
+        ).unwrap();
 
-    if json_value.eq(compare) {
-        println!("\n\nIssued JWT payload is THE SAME as payload of {:?}\n\n", path);
+    return presentation;
+}
+
+fn verify_presentation(
+    directory: &PathBuf,
+    presentation: &str,
+    serialization_format: SDJWTSerializationFormat
+) -> Value {
+    let pub_key_path = directory.clone().join(ISSUER_PUBLIC_KEY_PEM_FILE_NAME);
+
+    let _verified = SDJWTVerifier::new(
+        presentation.to_string(),
+        Box::new(move |_, _| {
+            let key = std::fs::read(&pub_key_path).expect("Failed to read file");
+            DecodingKey::from_ec_pem(&key).expect("Unable to create EncodingKey")
+        }),
+        None,
+        None,
+        serialization_format,
+    ).unwrap();
+
+    return _verified.verified_claims;
+}
+
+//
+
+fn remove_decoy_items(m: &serde_json::Value, hashes: &HashSet<String>) -> serde_json::Value {
+
+    let mut mm: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    for (key, val) in m.as_object().unwrap() {
+        if key == "_sd" {
+            let v1: Vec<_> = val.as_array().unwrap().iter()
+                .filter(|item| hashes.contains(item.as_str().unwrap()))
+                .map(|item| item.clone())
+                .collect();
+
+            let filtered_array = serde_json::Value::Array(v1);
+            mm.insert(key.clone(), filtered_array);
+        } else if val.is_object() {
+            let filtered_object = remove_decoy_items(val, hashes);
+            mm.insert(key.clone(), filtered_object);
+        } else {
+            mm.insert(key.clone(), val.clone());
+        }
+    }
+
+    return serde_json::Value::Object(mm);
+}
+
+fn parse_verified_claims(content: &str) -> Result<Value> {
+    let json_value: Value = serde_json::from_str(content)?;
+
+    // TODO: check if the json_value is json object
+    return Ok(json_value);
+}
+
+fn parse_sdjwt_paylod(sd_jwt: &str, json_format: bool, remove_decoy: bool) -> Value {
+
+    if json_format {
+        return parse_payload_json(sd_jwt, remove_decoy);
+    }
+
+    return parse_payload_compact(sd_jwt, remove_decoy);
+}
+
+fn parse_payload_json(sd_jwt: &str, remove_decoy: bool) -> serde_json::Value {
+    let v: serde_json::Value = serde_json::from_str(&sd_jwt).unwrap();
+
+    let disclosures = v.as_object().unwrap().get("disclosures").unwrap();
+
+    let mut hashes: HashSet<String> = HashSet::new();
+
+    for disclosure in disclosures.as_array().unwrap() {
+        let hash = base64_hash(disclosure.as_str().unwrap().replace(" ", "").as_bytes());
+        hashes.insert(hash.clone());
+    }
+
+    let ddd = v.as_object().unwrap().get("payload").unwrap().as_str().unwrap().replace(" ", "");
+    let payload = base64url_decode(&ddd).unwrap();
+
+    let payload: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+
+    if remove_decoy {
+        return remove_decoy_items(&payload, &hashes);
+    }
+
+    return payload;
+}
+
+fn parse_payload_compact(sd_jwt: &str, remove_decoy: bool) -> serde_json::Value {
+    let mut disclosures: Vec<String> = sd_jwt
+            .split("~")
+            .filter(|s| !s.is_empty())
+            .map(|s| String::from(s))
+            .collect();
+
+    let payload = disclosures.remove(0);
+
+    let payload: Vec<_> = payload.split(".").collect();
+    let payload = String::from(payload[1]);
+
+    let mut hashes: HashSet<String> = HashSet::new();
+
+    for disclosure in disclosures {
+        let hash = base64_hash(disclosure.as_bytes());
+        hashes.insert(hash.clone());
+    }
+
+    let payload = base64url_decode(&payload).unwrap();
+
+    let payload: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+
+    if remove_decoy {
+        return remove_decoy_items(&payload, &hashes);
+    }
+
+    return payload;
+}
+
+
+fn load_sd_jwt(path: &PathBuf) -> Result<String> {
+    let content = std::fs::read_to_string(path)?;
+    return Ok(content);
+}
+
+fn compare_jwt_payloads(loaded_payload: &Value, issued_payload: &Value) -> Result<()> {
+    if issued_payload.eq(loaded_payload) {
+        println!("\n\nIssued JWT payload is THE SAME as loaded payload\n\n");
     } else {
-        eprintln!(
-            "Issued JWT payload is NOT the same as payload of {:?}",
-            path
-        );
+        eprintln!("Issued JWT payload is NOT the same as loaded payload");
 
-        println!("Issued SD-JWT \n {:#?}", compare);
-        println!("Loaded SD-JWT \n {:#?}", json_value);
+        println!("Issued SD-JWT \n {:#?}", issued_payload);
+        println!("Loaded SD-JWT \n {:#?}", loaded_payload);
+    }
+
+    Ok(())
+}
+
+fn compare_verified_claims(loaded_claims: &Value, verified_claims: &Value) -> Result<()> {
+    if loaded_claims.eq(verified_claims) {
+        println!("\n\nVerified claims are THE SAME\n\n",);
+    } else {
+        eprintln!("Verified claims are NOT the same");
+
+        println!("Issued verified claims \n {:#?}", verified_claims);
+        println!("Loaded verified claims \n {:#?}", loaded_claims);
     }
 
     Ok(())
@@ -243,7 +366,6 @@ fn get_specification_paths(args: &Cli, basedir: PathBuf) -> Result<Vec<PathBuf>>
 }
 
 fn load_salts(path: &PathBuf) -> Result<()> {
-
     #[cfg(feature = "mock_salts")]
     {
         let salts_path = path.join(SALTS_FILE_NAME);

@@ -19,7 +19,7 @@ lazy_static! {
     pub static ref SALTS: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 }
 
-pub(crate) fn base64_hash(data: &[u8]) -> String {
+pub fn base64_hash(data: &[u8]) -> String {
     let mut hasher = sha2::Sha256::new();
     hasher.update(data);
     let hash = hasher.finalize();
@@ -31,7 +31,7 @@ pub(crate) fn base64url_encode(data: &[u8]) -> String {
     general_purpose::URL_SAFE_NO_PAD.encode(data)
 }
 
-pub(crate) fn base64url_decode(b64data: &str) -> Result<Vec<u8>> {
+pub fn base64url_decode(b64data: &str) -> Result<Vec<u8>> {
     general_purpose::URL_SAFE_NO_PAD
         .decode(b64data)
         .map_err(|e| Error::DeserializationError(e.to_string()))
