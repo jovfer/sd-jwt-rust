@@ -32,9 +32,9 @@ pub struct SDJWTIssuer {
     // internal fields
     inner: SDJWTCommon,
     all_disclosures: Vec<SDJWTDisclosure>,
-    pub sd_jwt_payload: SJMap<String, Value>,
-    pub signed_sd_jwt: String,
-    pub serialized_sd_jwt: String,
+    sd_jwt_payload: SJMap<String, Value>,
+    signed_sd_jwt: String,
+    serialized_sd_jwt: String,
 }
 
 /// ClaimsForSelectiveDisclosureStrategy is used to determine which claims can be selectively disclosed later by the holder.
@@ -359,7 +359,7 @@ impl SDJWTIssuer {
     }
 
     fn create_decoy_claim_entry(&mut self) -> String {
-        let digest = base64_hash(generate_salt(None).as_bytes()).to_string();
+        let digest = base64_hash(generate_salt().as_bytes()).to_string();
         digest
     }
 }

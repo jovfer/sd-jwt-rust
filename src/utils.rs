@@ -19,6 +19,7 @@ lazy_static! {
     pub static ref SALTS: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 }
 
+#[doc(hidden)]
 pub fn base64_hash(data: &[u8]) -> String {
     let mut hasher = sha2::Sha256::new();
     hasher.update(data);
@@ -31,20 +32,21 @@ pub(crate) fn base64url_encode(data: &[u8]) -> String {
     general_purpose::URL_SAFE_NO_PAD.encode(data)
 }
 
+#[doc(hidden)]
 pub fn base64url_decode(b64data: &str) -> Result<Vec<u8>> {
     general_purpose::URL_SAFE_NO_PAD
         .decode(b64data)
         .map_err(|e| Error::DeserializationError(e.to_string()))
 }
 
-pub(crate) fn generate_salt(_key_for_predefined_salt: Option<String>) -> String {
+pub(crate) fn generate_salt() -> String {
     let mut buf = [0u8; 16];
     ThreadRng::default().fill_bytes(&mut buf);
     base64url_encode(&buf)
 }
 
 #[cfg(feature = "mock_salts")]
-pub(crate) fn generate_salt_mock(_key_for_predefined_salt: Option<String>) -> String {
+pub(crate) fn generate_salt_mock() -> String {
     let mut salts = SALTS.lock().unwrap();
     return salts.pop_front().expect("SALTS is empty");
 }

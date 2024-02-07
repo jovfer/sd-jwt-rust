@@ -21,9 +21,6 @@ pub fn parse_sdjwt_paylod(
         },
         SDJWTSerializationFormat::Compact => {
             return parse_payload_compact(sd_jwt, remove_decoy);
-        },
-        _ => {
-            panic!("unsupported serialization format")
         }
     }
 }
