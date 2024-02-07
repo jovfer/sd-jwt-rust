@@ -5,17 +5,14 @@ mod utils;
 use jsonwebtoken::jwk::Jwk;
 
 use crate::error::{Error, ErrorKind, Result};
+use crate::utils::funcs::{parse_sdjwt_paylod, load_salts};
 use clap::Parser;
 use jsonwebtoken::{EncodingKey, DecodingKey};
 use sd_jwt_rs::issuer::{ClaimsForSelectiveDisclosureStrategy, SDJWTIssuer};
 use sd_jwt_rs::holder::SDJWTHolder;
 use sd_jwt_rs::verifier::SDJWTVerifier;
 use sd_jwt_rs::SDJWTSerializationFormat;
-use sd_jwt_rs::utils::{base64_hash, base64url_decode};
-#[cfg(feature = "mock_salts")]
-use sd_jwt_rs::utils::SALTS;
 use serde_json::{Number, Value};
-use std::collections::HashSet;
 use std::path::PathBuf;
 use types::cli::{Cli, GenerateType};
 use types::settings::Settings;
@@ -36,9 +33,6 @@ fn main() {
     println!("type_: {:?}, paths: {:?}", args.type_.clone(), args.paths);
 
     let basedir = std::env::current_dir().expect("Unable to get current directory");
-
-    // let settings = get_settings(&basedir.join(SETTINGS_FILE_NAME));
-
     let spec_directories = get_specification_paths(&args, basedir).unwrap();
 
     for mut directory in spec_directories {
@@ -60,13 +54,22 @@ fn generate_and_check(
     _: GenerateType,
 ) -> Result<()> {
     let decoy = specs.add_decoy_claims.unwrap_or(false);
+    let serialization_format;
+    let stored_sd_jwt_file_path;
 
-    let serialization_format = match specs.serialization_format.clone() {
-        Some(format) if format == "json" => SDJWTSerializationFormat::JSON,
-        Some(format) if format == "compact" => SDJWTSerializationFormat::Compact,
+    match &specs.serialization_format {
+        Some(format) if format == "json" => {
+            serialization_format = SDJWTSerializationFormat::JSON;
+            stored_sd_jwt_file_path = directory.join(format!("{SD_JWT_FILE_NAME_TEMPLATE}.json"));
+        },
+        Some(format) if format == "compact" => {
+            serialization_format = SDJWTSerializationFormat::Compact;
+            stored_sd_jwt_file_path = directory.join(format!("{SD_JWT_FILE_NAME_TEMPLATE}.txt"));
+        },
         None => {
             println!("using default serialization format: Compact");
-            SDJWTSerializationFormat::Compact
+            serialization_format = SDJWTSerializationFormat::Compact;
+            stored_sd_jwt_file_path = directory.join(format!("{SD_JWT_FILE_NAME_TEMPLATE}.txt"));
         },
         Some(format) => {
             panic!("unsupported format: {format}");
@@ -74,28 +77,15 @@ fn generate_and_check(
     };
 
     let sd_jwt = issue_sd_jwt(directory, &specs, settings, serialization_format.clone(), decoy)?;
-    let presentation = create_presentation(&sd_jwt, serialization_format.clone(), &specs.holder_disclosed_claims);
+    let presentation = create_presentation(&sd_jwt, serialization_format.clone(), &specs.holder_disclosed_claims)?;
 
     // Verify presentation
-    let verified_claims = verify_presentation(directory, &presentation, serialization_format.clone());
+    let verified_claims = verify_presentation(directory, &presentation, serialization_format.clone())?;
 
-    let mut json_format = false;
-    let mut extension = "txt";
+    let loaded_sd_jwt = load_sd_jwt(&stored_sd_jwt_file_path)?;
 
-    if specs.serialization_format.is_some() {
-        match specs.serialization_format {
-            Some(format) if format == "json" => {
-                json_format = true;
-                extension = "json";
-            }
-            _ => {}
-        }
-    }
-
-    let loaded_sd_jwt = load_sd_jwt(&directory.join(format!("{SD_JWT_FILE_NAME_TEMPLATE}.{extension}")))?;
-
-    let loaded_sdjwt_paylod = parse_sdjwt_paylod(&loaded_sd_jwt.replace("\n", ""), json_format, decoy);
-    let issued_sdjwt_paylod = parse_sdjwt_paylod(&sd_jwt, json_format, decoy);
+    let loaded_sdjwt_paylod = parse_sdjwt_paylod(&loaded_sd_jwt.replace("\n", ""), &serialization_format, decoy)?;
+    let issued_sdjwt_paylod = parse_sdjwt_paylod(&sd_jwt, &serialization_format, decoy)?;
 
     compare_jwt_payloads(&loaded_sdjwt_paylod, &issued_sdjwt_paylod)?;
 
@@ -152,7 +142,7 @@ fn create_presentation(
     sd_jwt: &str,
     serialization_format: SDJWTSerializationFormat,
     disclosed_claims: &serde_json::Map<String, serde_json::Value>
-) -> String {
+) -> Result<String> {
     let mut holder = SDJWTHolder::new(sd_jwt.to_string(), serialization_format).unwrap();
 
     let presentation = holder
@@ -164,14 +154,14 @@ fn create_presentation(
             None
         ).unwrap();
 
-    return presentation;
+    return Ok(presentation);
 }
 
 fn verify_presentation(
     directory: &PathBuf,
     presentation: &str,
     serialization_format: SDJWTSerializationFormat
-) -> Value {
+) -> Result<Value> {
     let pub_key_path = directory.clone().join(ISSUER_PUBLIC_KEY_PEM_FILE_NAME);
 
     let _verified = SDJWTVerifier::new(
@@ -185,33 +175,7 @@ fn verify_presentation(
         serialization_format,
     ).unwrap();
 
-    return _verified.verified_claims;
-}
-
-//
-
-fn remove_decoy_items(m: &serde_json::Value, hashes: &HashSet<String>) -> serde_json::Value {
-
-    let mut mm: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-
-    for (key, val) in m.as_object().unwrap() {
-        if key == "_sd" {
-            let v1: Vec<_> = val.as_array().unwrap().iter()
-                .filter(|item| hashes.contains(item.as_str().unwrap()))
-                .map(|item| item.clone())
-                .collect();
-
-            let filtered_array = serde_json::Value::Array(v1);
-            mm.insert(key.clone(), filtered_array);
-        } else if val.is_object() {
-            let filtered_object = remove_decoy_items(val, hashes);
-            mm.insert(key.clone(), filtered_object);
-        } else {
-            mm.insert(key.clone(), val.clone());
-        }
-    }
-
-    return serde_json::Value::Object(mm);
+    return Ok(_verified.verified_claims);
 }
 
 fn parse_verified_claims(content: &str) -> Result<Value> {
@@ -220,70 +184,6 @@ fn parse_verified_claims(content: &str) -> Result<Value> {
     // TODO: check if the json_value is json object
     return Ok(json_value);
 }
-
-fn parse_sdjwt_paylod(sd_jwt: &str, json_format: bool, remove_decoy: bool) -> Value {
-
-    if json_format {
-        return parse_payload_json(sd_jwt, remove_decoy);
-    }
-
-    return parse_payload_compact(sd_jwt, remove_decoy);
-}
-
-fn parse_payload_json(sd_jwt: &str, remove_decoy: bool) -> serde_json::Value {
-    let v: serde_json::Value = serde_json::from_str(&sd_jwt).unwrap();
-
-    let disclosures = v.as_object().unwrap().get("disclosures").unwrap();
-
-    let mut hashes: HashSet<String> = HashSet::new();
-
-    for disclosure in disclosures.as_array().unwrap() {
-        let hash = base64_hash(disclosure.as_str().unwrap().replace(" ", "").as_bytes());
-        hashes.insert(hash.clone());
-    }
-
-    let ddd = v.as_object().unwrap().get("payload").unwrap().as_str().unwrap().replace(" ", "");
-    let payload = base64url_decode(&ddd).unwrap();
-
-    let payload: serde_json::Value = serde_json::from_slice(&payload).unwrap();
-
-    if remove_decoy {
-        return remove_decoy_items(&payload, &hashes);
-    }
-
-    return payload;
-}
-
-fn parse_payload_compact(sd_jwt: &str, remove_decoy: bool) -> serde_json::Value {
-    let mut disclosures: Vec<String> = sd_jwt
-            .split("~")
-            .filter(|s| !s.is_empty())
-            .map(|s| String::from(s))
-            .collect();
-
-    let payload = disclosures.remove(0);
-
-    let payload: Vec<_> = payload.split(".").collect();
-    let payload = String::from(payload[1]);
-
-    let mut hashes: HashSet<String> = HashSet::new();
-
-    for disclosure in disclosures {
-        let hash = base64_hash(disclosure.as_bytes());
-        hashes.insert(hash.clone());
-    }
-
-    let payload = base64url_decode(&payload).unwrap();
-
-    let payload: serde_json::Value = serde_json::from_slice(&payload).unwrap();
-
-    if remove_decoy {
-        return remove_decoy_items(&payload, &hashes);
-    }
-
-    return payload;
-}
-
 
 fn load_sd_jwt(path: &PathBuf) -> Result<String> {
     let content = std::fs::read_to_string(path)?;
@@ -341,7 +241,7 @@ fn get_specification_paths(args: &Cli, basedir: PathBuf) -> Result<Vec<PathBuf>>
                     let path = entry.path();
                     if path.is_dir() && path.join(SPECIFICATION_FILE_NAME).exists() {
                         // load_salts(&path).map_err(|err| Error::from_msg(ErrorKind::IOError, err.to_string()))?;
-                        load_salts(&path).unwrap();
+                        load_salts(&path.join(SALTS_FILE_NAME)).unwrap();
                         return Some(path.join(SPECIFICATION_FILE_NAME));
                     }
                 }
@@ -354,7 +254,7 @@ fn get_specification_paths(args: &Cli, basedir: PathBuf) -> Result<Vec<PathBuf>>
             .iter()
             .map(|d| {
                 // load_salts(&path).map_err(|err| Error::from_msg(ErrorKind::IOError, err.to_string()))?;
-                load_salts(&d).unwrap();
+                load_salts(&d.join(SALTS_FILE_NAME)).unwrap();
                 basedir.join(d).join(SPECIFICATION_FILE_NAME)
             })
             .collect();
@@ -363,24 +263,4 @@ fn get_specification_paths(args: &Cli, basedir: PathBuf) -> Result<Vec<PathBuf>>
     println!("specification.yaml files - {:?}", glob);
 
     Ok(glob)
-}
-
-fn load_salts(path: &PathBuf) -> Result<()> {
-    #[cfg(feature = "mock_salts")]
-    {
-        let salts_path = path.join(SALTS_FILE_NAME);
-        let json_data = std::fs::read_to_string(salts_path)
-            .map_err(|e| Error::from_msg(ErrorKind::IOError, e.to_string()))?;
-        let salts: Vec<String> = serde_json::from_str(&json_data)?;
-
-        {
-            let mut s = SALTS.lock().unwrap();
-
-            for salt in salts.iter() {
-                s.push_back(salt.clone());
-            }
-        }
-    }
-
-    Ok(())
 }
