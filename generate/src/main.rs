@@ -92,7 +92,9 @@ fn generate_and_check(
     let loaded_verified_claims_content = load_sd_jwt(&directory.join(VERIFIED_CLAIMS_FILE_NAME))?;
     let loaded_verified_claims = parse_verified_claims(&loaded_verified_claims_content)?;
 
-    compare_verified_claims(&loaded_verified_claims, &verified_claims)
+    compare_verified_claims(&loaded_verified_claims, &verified_claims)?;
+
+    return Ok(());
 }
 
 fn issue_sd_jwt(
@@ -107,12 +109,19 @@ fn issue_sd_jwt(
     let mut user_claims = specs.user_claims.claims_to_json_value()?;
     let claims_obj = user_claims.as_object_mut().expect("must be an object");
 
-    let iat = settings.iat.expect("'iat' value must be provided by settings.yml");
-    let exp = settings.exp.expect("'expt' value must be provided by settings.yml");
+    if !claims_obj.contains_key("iss") {
+        claims_obj.insert(String::from("iss"), Value::String(settings.identifiers.issuer.clone()));
+    }
 
-    claims_obj.insert(String::from("iss"), Value::String(settings.identifiers.issuer.clone()));
-    claims_obj.insert(String::from("iat"), Value::Number(Number::from(iat)));
-    claims_obj.insert(String::from("exp"), Value::Number(Number::from(exp)));
+    if !claims_obj.contains_key("iat") {
+        let iat = settings.iat.expect("'iat' value must be provided by settings.yml");
+        claims_obj.insert(String::from("iat"), Value::Number(Number::from(iat)));
+    }
+
+    if !claims_obj.contains_key("exp") {
+        let exp = settings.exp.expect("'expt' value must be provided by settings.yml");
+        claims_obj.insert(String::from("exp"), Value::Number(Number::from(exp)));
+    }
 
     let sd_claims_jsonpaths = specs.user_claims.sd_claims_to_jsonpath()?;
 
@@ -192,28 +201,32 @@ fn load_sd_jwt(path: &PathBuf) -> Result<String> {
 
 fn compare_jwt_payloads(loaded_payload: &Value, issued_payload: &Value) -> Result<()> {
     if issued_payload.eq(loaded_payload) {
-        println!("\n\nIssued JWT payload is THE SAME as loaded payload\n\n");
+        println!("\nJWT payloads are equal");
     } else {
-        eprintln!("Issued JWT payload is NOT the same as loaded payload");
+        eprintln!("\nJWT payloads are NOT equal");
 
         println!("Issued SD-JWT \n {:#?}", issued_payload);
         println!("Loaded SD-JWT \n {:#?}", loaded_payload);
+
+        return Err(Error::from_msg(ErrorKind::DataNotEqual, "JWT payloads are different"));
     }
 
-    Ok(())
+    return Ok(());
 }
 
 fn compare_verified_claims(loaded_claims: &Value, verified_claims: &Value) -> Result<()> {
     if loaded_claims.eq(verified_claims) {
-        println!("\n\nVerified claims are THE SAME\n\n",);
+        println!("Verified claims are equal",);
     } else {
-        eprintln!("Verified claims are NOT the same");
+        eprintln!("Verified claims are NOT equal");
 
         println!("Issued verified claims \n {:#?}", verified_claims);
         println!("Loaded verified claims \n {:#?}", loaded_claims);
+
+        return Err(Error::from_msg(ErrorKind::DataNotEqual, "verified claims are different"));
     }
 
-    Ok(())
+    return Ok(());
 }
 
 fn get_key(path: &PathBuf) -> EncodingKey {
@@ -226,8 +239,6 @@ fn get_settings(path: &PathBuf) -> Settings {
     println!("settings.yaml - {:?}", path);
 
     let settings = Settings::from(path);
-    println!("{:#?}", settings);
-
     settings
 }
 

@@ -12,6 +12,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum ErrorKind {
     Input,
     IOError,
+    DataNotEqual,
 }
 
 impl ErrorKind {
@@ -19,7 +20,8 @@ impl ErrorKind {
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Input => "Input error",
-            Self::IOError => "IO error"
+            Self::IOError => "IO error",
+            Self::DataNotEqual => "Data not equal error",
         }
     }
 }

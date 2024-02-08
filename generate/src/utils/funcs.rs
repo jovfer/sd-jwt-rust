@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use serde_json::Value;
 use sd_jwt_rs::SDJWTSerializationFormat;
 use sd_jwt_rs::utils::{base64_hash, base64url_decode};
-#[cfg(feature = "mock_salts")]
 use sd_jwt_rs::utils::SALTS;
 use crate::error::{Error, ErrorKind, Result};
 
@@ -103,18 +102,15 @@ fn remove_decoy_items(payload: &Value, hashes: &HashSet<String>) -> Value {
 }
 
 pub fn load_salts(path: &PathBuf) -> Result<()> {
-    #[cfg(feature = "mock_salts")]
+    let json_data = std::fs::read_to_string(path)
+        .map_err(|e| Error::from_msg(ErrorKind::IOError, e.to_string()))?;
+    let salts: Vec<String> = serde_json::from_str(&json_data)?;
+
     {
-        let json_data = std::fs::read_to_string(path)
-            .map_err(|e| Error::from_msg(ErrorKind::IOError, e.to_string()))?;
-        let salts: Vec<String> = serde_json::from_str(&json_data)?;
+        let mut s = SALTS.lock().unwrap();
 
-        {
-            let mut s = SALTS.lock().unwrap();
-
-            for salt in salts.iter() {
-                s.push_back(salt.clone());
-            }
+        for salt in salts.iter() {
+            s.push_back(salt.clone());
         }
     }
 
