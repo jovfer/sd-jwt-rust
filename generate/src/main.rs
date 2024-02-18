@@ -84,7 +84,7 @@ fn generate_and_check(
 
     let loaded_sd_jwt = load_sd_jwt(&stored_sd_jwt_file_path)?;
 
-    let loaded_sdjwt_paylod = parse_sdjwt_paylod(&loaded_sd_jwt.replace("\n", ""), &serialization_format, decoy)?;
+    let loaded_sdjwt_paylod = parse_sdjwt_paylod(&loaded_sd_jwt.replace('\n', ""), &serialization_format, decoy)?;
     let issued_sdjwt_paylod = parse_sdjwt_paylod(&sd_jwt, &serialization_format, decoy)?;
 
     compare_jwt_payloads(&loaded_sdjwt_paylod, &issued_sdjwt_paylod)?;
@@ -94,7 +94,7 @@ fn generate_and_check(
 
     compare_verified_claims(&loaded_verified_claims, &verified_claims)?;
 
-    return Ok(());
+    Ok(())
 }
 
 fn issue_sd_jwt(
@@ -144,7 +144,7 @@ fn issue_sd_jwt(
             serialization_format)
         .unwrap();
 
-    return Ok(sd_jwt);
+    Ok(sd_jwt)
 }
 
 fn create_presentation(
@@ -163,7 +163,7 @@ fn create_presentation(
             None
         ).unwrap();
 
-    return Ok(presentation);
+    Ok(presentation)
 }
 
 fn verify_presentation(
@@ -184,19 +184,19 @@ fn verify_presentation(
         serialization_format,
     ).unwrap();
 
-    return Ok(_verified.verified_claims);
+    Ok(_verified.verified_claims)
 }
 
 fn parse_verified_claims(content: &str) -> Result<Value> {
     let json_value: Value = serde_json::from_str(content)?;
 
     // TODO: check if the json_value is json object
-    return Ok(json_value);
+    Ok(json_value)
 }
 
 fn load_sd_jwt(path: &PathBuf) -> Result<String> {
     let content = std::fs::read_to_string(path)?;
-    return Ok(content);
+    Ok(content)
 }
 
 fn compare_jwt_payloads(loaded_payload: &Value, issued_payload: &Value) -> Result<()> {
@@ -211,7 +211,7 @@ fn compare_jwt_payloads(loaded_payload: &Value, issued_payload: &Value) -> Resul
         return Err(Error::from_msg(ErrorKind::DataNotEqual, "JWT payloads are different"));
     }
 
-    return Ok(());
+    Ok(())
 }
 
 fn compare_verified_claims(loaded_claims: &Value, verified_claims: &Value) -> Result<()> {
@@ -226,7 +226,7 @@ fn compare_verified_claims(loaded_claims: &Value, verified_claims: &Value) -> Re
         return Err(Error::from_msg(ErrorKind::DataNotEqual, "verified claims are different"));
     }
 
-    return Ok(());
+    Ok(())
 }
 
 fn get_key(path: &PathBuf) -> EncodingKey {
@@ -238,8 +238,7 @@ fn get_key(path: &PathBuf) -> EncodingKey {
 fn get_settings(path: &PathBuf) -> Settings {
     println!("settings.yaml - {:?}", path);
 
-    let settings = Settings::from(path);
-    settings
+    Settings::from(path)
 }
 
 fn get_specification_paths(args: &Cli, basedir: PathBuf) -> Result<Vec<PathBuf>> {

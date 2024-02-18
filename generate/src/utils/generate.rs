@@ -9,7 +9,7 @@ pub fn generate_jsonpath_from_tagged_values(
 ) -> Result<()> {
 
     if path.is_empty() {
-        path.push_str("$");
+        path.push('$');
     }
 
     match yaml {

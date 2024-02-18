@@ -16,27 +16,27 @@ pub fn parse_sdjwt_paylod(
 
     match serialization_format {
         SDJWTSerializationFormat::JSON => {
-            return parse_payload_json(sd_jwt, remove_decoy);
+            parse_payload_json(sd_jwt, remove_decoy)
         },
         SDJWTSerializationFormat::Compact => {
-            return parse_payload_compact(sd_jwt, remove_decoy);
+            parse_payload_compact(sd_jwt, remove_decoy)
         }
     }
 }
 
 fn parse_payload_json(sd_jwt: &str, remove_decoy: bool) -> Result<Value> {
-    let v: serde_json::Value = serde_json::from_str(&sd_jwt).unwrap();
+    let v: serde_json::Value = serde_json::from_str(sd_jwt).unwrap();
 
     let disclosures = v.as_object().unwrap().get("disclosures").unwrap();
 
     let mut hashes: HashSet<String> = HashSet::new();
 
     for disclosure in disclosures.as_array().unwrap() {
-        let hash = base64_hash(disclosure.as_str().unwrap().replace(" ", "").as_bytes());
+        let hash = base64_hash(disclosure.as_str().unwrap().replace(' ', "").as_bytes());
         hashes.insert(hash.clone());
     }
 
-    let ddd = v.as_object().unwrap().get("payload").unwrap().as_str().unwrap().replace(" ", "");
+    let ddd = v.as_object().unwrap().get("payload").unwrap().as_str().unwrap().replace(' ', "");
     let payload = base64url_decode(&ddd).unwrap();
 
     let payload: serde_json::Value = serde_json::from_slice(&payload).unwrap();
@@ -45,19 +45,19 @@ fn parse_payload_json(sd_jwt: &str, remove_decoy: bool) -> Result<Value> {
         return Ok(remove_decoy_items(&payload, &hashes));
     }
 
-    return Ok(payload);
+    Ok(payload)
 }
 
 fn parse_payload_compact(sd_jwt: &str, remove_decoy: bool) -> Result<Value> {
     let mut disclosures: Vec<String> = sd_jwt
-            .split("~")
+            .split('~')
             .filter(|s| !s.is_empty())
-            .map(|s| String::from(s))
+            .map(String::from)
             .collect();
 
     let payload = disclosures.remove(0);
 
-    let payload: Vec<_> = payload.split(".").collect();
+    let payload: Vec<_> = payload.split('.').collect();
     let payload = String::from(payload[1]);
 
     let mut hashes: HashSet<String> = HashSet::new();
@@ -75,7 +75,7 @@ fn parse_payload_compact(sd_jwt: &str, remove_decoy: bool) -> Result<Value> {
         return Ok(remove_decoy_items(&payload, &hashes));
     }
 
-    return Ok(payload);
+    Ok(payload)
 }
 
 fn remove_decoy_items(payload: &Value, hashes: &HashSet<String>) -> Value {
@@ -84,8 +84,7 @@ fn remove_decoy_items(payload: &Value, hashes: &HashSet<String>) -> Value {
     for (key, val) in payload.as_object().unwrap() {
         if key == "_sd" {
             let v1: Vec<_> = val.as_array().unwrap().iter()
-                .filter(|item| hashes.contains(item.as_str().unwrap()))
-                .map(|item| item.clone())
+                .filter(|item| hashes.contains(item.as_str().unwrap())).cloned()
                 .collect();
 
             let filtered_array = serde_json::Value::Array(v1);
@@ -98,7 +97,7 @@ fn remove_decoy_items(payload: &Value, hashes: &HashSet<String>) -> Value {
         }
     }
 
-    return Value::Object(map);
+    Value::Object(map)
 }
 
 pub fn load_salts(path: &PathBuf) -> Result<()> {

@@ -30,10 +30,10 @@ impl Specification {
 fn replace_empty_items(m: &serde_json::Value) -> serde_json::Value {
     match m {
         serde_json::Value::Array(arr) if (arr.is_empty()) => {
-            return serde_json::Value::Bool(false);
+            serde_json::Value::Bool(false)
         }
         serde_json::Value::Object(obj) if (obj.is_empty()) => {
-            return serde_json::Value::Bool(false);
+            serde_json::Value::Bool(false)
         }
         serde_json::Value::Array(arr) => {
             let mut result = Vec::new();
@@ -42,7 +42,7 @@ fn replace_empty_items(m: &serde_json::Value) -> serde_json::Value {
                 result.push(replace_empty_items(value));
             }
 
-            return serde_json::Value::Array(result);
+            serde_json::Value::Array(result)
         }
         serde_json::Value::Object(obj) => {
             let mut result = serde_json::Map::new();
@@ -51,10 +51,10 @@ fn replace_empty_items(m: &serde_json::Value) -> serde_json::Value {
                 result.insert(key.clone(), replace_empty_items(value));
             }
 
-            return serde_json::Value::Object(result);
+            serde_json::Value::Object(result)
         }
         _ => {
-            return m.clone();
+            m.clone()
         }
     }
 }
@@ -106,7 +106,7 @@ fn _validate(value: &Value) -> Result<()> {
     match value {
         Value::String(_) | Value::Bool(_) | Value::Number(_) => Ok(()),
         Value::Tagged(tag) => {
-            if tag.tag.to_string() == SD_TAG {
+            if tag.tag == SD_TAG {
                 _validate(&tag.value)
             } else {
                 panic!(
@@ -161,7 +161,7 @@ fn _remove_tags(original: &Value) -> Value {
             Value::Mapping(filtered_map)
         }
         Value::Sequence(seq) => {
-            let filtered_seq: Vec<Value> = seq.iter().map(|v| _remove_tags(v)).collect();
+            let filtered_seq: Vec<Value> = seq.iter().map(_remove_tags).collect();
 
             Value::Sequence(filtered_seq)
         }

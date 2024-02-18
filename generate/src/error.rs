@@ -3,8 +3,6 @@
 use std::error::Error as StdError;
 use std::fmt::{self, Display, Formatter};
 use std::result::Result as StdResult;
-use serde_json;
-use serde_yaml;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
